@@ -199,7 +199,8 @@ async def main(url, result_file, no_pre_download):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Download and process video segments.')
-    parser.add_argument('-npd', '--no-pre-download', action='store_true', help='Пропустить предварительную загрузку размеров')
+    parser.add_argument('--pd', action='store_false', dest='no_pre_download', 
+                        help='Включить предварительную загрузку размеров (по умолчанию отключено)')
     args = parser.parse_args()
 
     while True:
