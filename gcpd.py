@@ -201,9 +201,29 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Download and process video segments.')
     parser.add_argument('--pd', action='store_false', dest='no_pre_download', 
                         help='Включить предварительную загрузку размеров (по умолчанию отключено)')
+    parser.add_argument('-f', type=str, dest='file', 
+                        help='Указать файл где находятся ссылки плей-листов и имена выходных файлов', default=False)
     args = parser.parse_args()
 
-    while True:
-        url = input("Введите ссылку на плей-лист: ")
-        result_file = input("Введите имя выходного файла: ")
-        asyncio.run(main(url, result_file, args.no_pre_download))
+    if args.file != False:
+        url = ""
+        result_file = ""
+        if not os.path.exists(args.file):
+            print("Файл для скачивания не существует")
+            exit(-1)
+        for i in open(args.file, encoding="utf-8"):
+            if url != "":
+                result_file = i.strip()
+                print("Скачивание плей-листа: ", url)
+                print("В файл: ", result_file)
+                asyncio.run(main(url, result_file, args.no_pre_download))
+                
+                url = ""
+                result_file = ""
+            else:
+                url = i.strip()
+    else:
+        while True:
+            url = input("Введите ссылку на плей-лист: ")
+            result_file = input("Введите имя выходного файла: ")
+            asyncio.run(main(url, result_file, args.no_pre_download))
