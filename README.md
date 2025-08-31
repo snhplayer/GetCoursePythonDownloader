@@ -31,6 +31,118 @@
 
 3. Убедитесь, что FFmpeg установлен и доступен в системном PATH или находится в одной папке со скриптом.
 
+## Установка FFmpeg
+Отличная идея—добавим в README понятный раздел про установку FFmpeg на Windows/Linux/macOS. Ниже готовый блок, который можно вставить как есть.
+
+---
+
+## Установка FFmpeg
+
+Скрипту нужен установленный FFmpeg (должен быть доступен в `PATH` или лежать рядом с `gcpd.py`). Проверить установку можно командой `ffmpeg -version`.
+
+### Windows
+
+Самый простой путь — через пакетный менеджер **winget** (Windows 10/11):
+
+```powershell
+winget install --id Gyan.FFmpeg -e
+```
+
+Альтернативы:
+
+* **Chocolatey**:
+
+  ```powershell
+  choco install ffmpeg
+  ```
+* **Scoop**:
+
+  ```powershell
+  scoop install ffmpeg
+  ```
+* Ручная установка (zip-архив): скачайте сборку FFmpeg для Windows со страницы загрузок FFmpeg (раздел *Windows builds*), распакуйте и добавьте папку `bin` в переменную окружения `PATH`.
+
+Примечание: `winget` пакет **Gyan.FFmpeg** ставит официально рекомендуемую сборку; подробнее см. карточку пакета.
+Chocolatey и Scoop также предоставляют готовые бинарники.
+
+### Linux
+
+#### Ubuntu / Debian
+
+```bash
+sudo apt update
+sudo apt install ffmpeg
+ffmpeg -version
+```
+
+FFmpeg доступен в официальных репозиториях Ubuntu/Debian (подробности на Launchpad/Debian Packages).
+
+> Альтернатива: Snap-пакет `ffmpeg` (удобно, но может отличаться по набору кодеков и изоляции):
+> `sudo snap install ffmpeg` 
+
+#### Fedora
+
+На Fedora «полная» сборка FFmpeg ставится из репозиториев **RPM Fusion**:
+
+1) Подключить RPM Fusion (Free и Nonfree)
+```bash
+sudo dnf install \
+  https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+  https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+```
+2) Установить FFmpeg
+```bash
+sudo dnf install ffmpeg
+
+ffmpeg -version
+```
+
+Подробные инструкции по включению RPM Fusion есть в документации Fedora и на сайте RPM Fusion. Учтите, что в официальном репозитории Fedora есть урезанный пакет `ffmpeg-free`; для максимальной совместимости обычно используют пакет `ffmpeg` из RPM Fusion.
+
+#### Arch Linux
+
+```bash
+sudo pacman -S ffmpeg
+ffmpeg -version
+```
+
+Пакет доступен в официальном репозитории (`extra`), см. Arch Wiki и карточку пакета.
+
+### macOS
+
+Рекомендуемый способ — **Homebrew**:
+
+```bash
+# если brew ещё не установлен: https://brew.sh
+brew install ffmpeg
+ffmpeg -version
+```
+
+Страница формулы Homebrew подтверждает доступность для Apple Silicon и Intel.
+
+Альтернативы:
+
+* **MacPorts**:
+
+  ```bash
+  sudo port install ffmpeg
+  ```
+
+* Статические сборки для macOS доступны со страницы загрузок FFmpeg (раздел *macOS*).
+
+---
+
+### Проверка установки
+
+После установки выполните:
+
+```bash
+ffmpeg -version
+ffprobe -version
+```
+
+Если команды не находятся, убедитесь, что путь к каталогу с бинарниками (`ffmpeg`, `ffprobe`) добавлен в `PATH`. Ссылки на официальные способы получения готовых сборок (Windows/macOS/Linux) приведены на странице загрузок FFmpeg.
+
 ## Использование
 
 Запустите скрипт:
