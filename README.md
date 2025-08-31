@@ -113,8 +113,6 @@ brew install ffmpeg
 ffmpeg -version
 ```
 
-Страница формулы Homebrew подтверждает доступность для Apple Silicon и Intel.
-
 Альтернативы:
 
 * **MacPorts**:
