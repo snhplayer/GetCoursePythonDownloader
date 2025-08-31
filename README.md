@@ -20,8 +20,8 @@
 
 1. Клонируйте репозиторий:
    ```
-   git clone https://github.com/your-username/getcourse-video-downloader.git
-   cd getcourse-video-downloader
+   git clone https://github.com/snhplayer/GetCoursePythonDownloader.git
+   cd GetCoursePythonDownloader
    ```
 
 2. Установите необходимые библиотеки:
