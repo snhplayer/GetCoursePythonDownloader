@@ -9,11 +9,13 @@
 - Автоматическое объединение сегментов
 - Конвертация в MP4 с использованием FFmpeg
 - Поддержка повторных попыток при ошибках загрузки и конвертации
+- **Поддержка Kinescope**: автоматическое скачивание и объединение отдельных видео/аудио дорожек
 
 ## Требования
 
 - Python 3.7+
 - FFmpeg
+- yt-dlp (для скачивания Kinescope видео)
 - Библиотеки Python: aiohttp, tqdm
 
 ## Установка
@@ -26,7 +28,7 @@
 
 2. Установите необходимые библиотеки:
    ```
-   pip install aiohttp tqdm
+   pip install aiohttp tqdm yt-dlp
    ```
 
 3. Убедитесь, что FFmpeg установлен и доступен в системном PATH или находится в одной папке со скриптом.
@@ -187,14 +189,58 @@ https://....
 foo3
 ```
 
+### Работа с Kinescope (отдельные видео/аудио дорожки)
+
+Скрипт автоматически определяет ссылки Kinescope и объединяет отдельные дорожки.
+
+**Формат Kinescope:**
+
+```
+https://kinescope.io/VIDEO_ID/media.m3u8?quality=720&type=video
+https://kinescope.io/VIDEO_ID/media.m3u8?quality=720&type=audio&lang=und
+output_filename
+```
+
+**Как получить ссылки Kinescope:**
+1. Откройте видео в браузере
+2. Откройте DevTools (F12) → вкладка Network
+3. Найдите запросы к `media.m3u8?quality=720&type=video` и `type=audio`
+4. Скопируйте полные URL
+
+**Интерактивный режим:**
+```
+python gcpd.py
+# Введите ссылку на видео дорожку
+# Введите ссылку на аудио дорожку
+# Введите имя выходного файла
+```
+
+**Пример файла для пакетной загрузки:**
+```
+python gcpd.py -f kinescope.txt
+```
+
+kinescope.txt:
+```
+https://kinescope.io/VIDEO_ID_1/media.m3u8?quality=720&type=video
+https://kinescope.io/VIDEO_ID_1/media.m3u8?quality=720&type=audio&lang=und
+video1_name
+https://kinescope.io/VIDEO_ID_2/media.m3u8?quality=720&type=video
+https://kinescope.io/VIDEO_ID_2/media.m3u8?quality=720&type=audio&lang=und
+video2_name
+```
+
+Скрипт использует yt-dlp для скачивания полных потоков и автоматически объединяет их в один MP4 файл с помощью FFmpeg.
+
 ## Решение проблем
 
 Если возникают проблемы с загрузкой или конвертацией, скрипт автоматически попытается повторить операцию. Если проблема сохраняется, проверьте:
 
 1. Правильность ссылки на плейлист.
 2. Наличие доступа к интернету.
-3. Корректность установки FFmpeg.
+3. Корректность установки FFmpeg и yt-dlp.
 4. Свободное место на диске.
+5. Для Kinescope: убедитесь, что используете полные ссылки с параметрами `quality` и `type`.
 
 ## Вклад в проект
 
