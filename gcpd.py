@@ -11,6 +11,53 @@ import time
 
 MAX_PARALLEL_DOWNLOADS = 4 # Максимальное кол-во параллельных загрузок сегментов
 
+def merge_video_audio(video_file, audio_file, output_file):
+    """Объединение видео и аудио дорожек в один MP4 файл"""
+    print("Объединение видео и аудио дорожек...")
+    try:
+        subprocess.run(
+            ['ffmpeg', '-i', video_file, '-i', audio_file, '-c', 'copy', '-shortest', output_file],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        print(f"Объединение завершено: {output_file}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Ошибка при объединении: {e}")
+        return False
+
+async def download_kinescope_tracks(video_url, audio_url, result_file):
+    """Скачивание и объединение отдельных видео/аудио дорожек Kinescope"""
+    video_m3u8 = video_url
+    audio_m3u8 = audio_url
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        video_file = os.path.join(tmpdir, 'video.mp4')
+        audio_file = os.path.join(tmpdir, 'audio.mp4')
+        
+        print(f"Скачивание видео дорожки...")
+        print(f"URL: {video_m3u8}")
+        subprocess.run([
+            'yt-dlp', '--add-header', 'Referer:https://kinescope.io',
+            '--add-header', 'Origin:https://kinescope.io',
+            '-o', video_file, video_m3u8
+        ], check=True)
+        
+        print(f"\nСкачивание аудио дорожки...")
+        print(f"URL: {audio_m3u8}")
+        subprocess.run([
+            'yt-dlp', '--add-header', 'Referer:https://kinescope.io',
+            '--add-header', 'Origin:https://kinescope.io',
+            '-o', audio_file, audio_m3u8
+        ], check=True)
+        
+        output_file = result_file if result_file.endswith('.mp4') else result_file + '.mp4'
+        if merge_video_audio(video_file, audio_file, output_file):
+            print(f"Готово: {output_file}")
+        else:
+            print("Не удалось объединить дорожки")
+
 async def download_file(session, url, destination, progress_bar):
     async with session.get(url) as response:
         response.raise_for_status()
@@ -211,19 +258,45 @@ if __name__ == '__main__':
         if not os.path.exists(args.file):
             print("Файл для скачивания не существует")
             exit(-1)
-        for i in open(args.file, encoding="utf-8"):
-            if url != "":
-                result_file = i.strip()
-                print("Скачивание плей-листа: ", url)
-                print("В файл: ", result_file)
-                asyncio.run(main(url, result_file, args.no_pre_download))
+        
+        lines = [line.strip() for line in open(args.file, encoding="utf-8") if line.strip()]
+        i = 0
+        while i < len(lines):
+            url = lines[i]
+            
+            # Проверяем Kinescope: kinescope.io с type=video/audio
+            is_kinescope = ('kinescope.io' in url and 'type=video' in url)
+            if is_kinescope and i + 2 < len(lines):
+                next_url = lines[i+1]
+                is_next_kinescope = ('kinescope.io' in next_url and 'type=audio' in next_url)
                 
-                url = ""
-                result_file = ""
-            else:
-                url = i.strip()
+                if is_next_kinescope:
+                    video_url = url
+                    audio_url = next_url
+                    result_file = lines[i+2] if i + 2 < len(lines) else "output"
+                    
+                    print(f"Обнаружены Kinescope дорожки")
+                    print(f"Видео: {video_url}")
+                    print(f"Аудио: {audio_url}")
+                    print(f"Выходной файл: {result_file}")
+                    asyncio.run(download_kinescope_tracks(video_url, audio_url, result_file))
+                    i += 3
+                    continue
+            
+            # Обычный m3u8 плейлист
+            result_file = lines[i+1] if i + 1 < len(lines) else "output"
+            print("Скачивание плей-листа: ", url)
+            print("В файл: ", result_file)
+            asyncio.run(main(url, result_file, args.no_pre_download))
+            i += 2
     else:
         while True:
-            url = input("Введите ссылку на плей-лист: ")
-            result_file = input("Введите имя выходного файла: ")
-            asyncio.run(main(url, result_file, args.no_pre_download))
+            url = input("Введите ссылку (плейлист или видео Kinescope): ")
+            
+            if 'kinescope.io' in url and 'type=video' in url:
+                audio_url = input("Введите ссылку на аудио дорожку: ")
+                result_file = input("Введите имя выходного файла: ")
+                asyncio.run(download_kinescope_tracks(url, audio_url, result_file))
+            else:
+                result_file = input("Введите имя выходного файла: ")
+                asyncio.run(main(url, result_file, args.no_pre_download))

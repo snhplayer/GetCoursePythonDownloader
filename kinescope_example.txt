@@ -1,0 +1,3 @@
+https://kinescope.io/{ID-media}/media.m3u8?quality=720&type=video
+https://kinescope.io/{ID-media}/media.m3u8?quality=720&type=audio&lang=und
+output_video
