@@ -3,6 +3,8 @@
 // @namespace    https://github.com/snhplayer/GetCoursePythonDownloader
 // @version      0.7.1
 // @description  Collect m3u8 links for gcpd.py batch downloads
+// Добавьте свой домен здесь (см. README для подробных инструкций)
+// Add your own domain here to allow Violentmonkey to handle it
 // @match        *://getcourse.ru/*
 // @match        *://*.getcourse.ru/*
 // @match        *://*.muzkursi.ru/*
