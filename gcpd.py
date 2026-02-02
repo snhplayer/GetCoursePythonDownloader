@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import tempfile
+from urllib.parse import urljoin
 import aiohttp
 import asyncio
 from tqdm import tqdm
@@ -104,6 +105,48 @@ async def get_total_size(session, urls):
             total_size += int(response.headers.get('content-length', 0))
     return total_size
 
+def _parse_resolution(resolution_str):
+    """Parse RESOLUTION=WxH to (width, height); return (0, 0) if missing/invalid."""
+    if not resolution_str:
+        return (0, 0)
+    m = re.match(r'(\d+)x(\d+)', resolution_str.strip())
+    return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+
+def resolve_master_playlist(content, base_url):
+    """
+    Parse HLS master playlist (#EXT-X-STREAM-INF), resolve relative URIs against base_url,
+    and return the URL of the highest quality variant (by resolution height, then bandwidth).
+    """
+    variants = []
+    lines = content.strip().split('\n')
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith('#EXT-X-STREAM-INF:'):
+            attrs = {}
+            rest = line[len('#EXT-X-STREAM-INF:'):].strip()
+            for part in rest.split(','):
+                part = part.strip()
+                if '=' in part:
+                    k, v = part.split('=', 1)
+                    attrs[k.strip()] = v.strip()
+            resolution = attrs.get('RESOLUTION', '')
+            bandwidth = int(attrs.get('BANDWIDTH', 0) or '0')
+            width, height = _parse_resolution(resolution)
+            i += 1
+            if i < len(lines) and not lines[i].startswith('#'):
+                uri = lines[i].strip()
+                if uri:
+                    resolved = urljoin(base_url, uri)
+                    variants.append((resolved, height, bandwidth))
+            i += 1
+            continue
+        i += 1
+    if not variants:
+        return None
+    variants.sort(key=lambda v: (v[1], v[2]), reverse=True)
+    return variants[0][0]
+
 def convert_to_mp4(result_file, max_retries=3):
     mp4_file = result_file + '.mp4'
     retry_count = 0
@@ -183,6 +226,15 @@ async def main(url, result_file, no_pre_download):
             with open(main_playlist, 'r', encoding='utf-8') as f:
                 main_playlist_content = f.read()
 
+            if '#EXT-X-STREAM-INF' in main_playlist_content:
+                best_variant_url = resolve_master_playlist(main_playlist_content, url)
+                if best_variant_url:
+                    print("Обнаружен мастер-плейлист, загрузка лучшего варианта качества...")
+                    with tqdm(total=None, desc="Плейлист варианта", unit="B", unit_scale=True) as pbar:
+                        await download_file(session, best_variant_url, main_playlist, pbar)
+                    with open(main_playlist, 'r', encoding='utf-8') as f:
+                        main_playlist_content = f.read()
+
             ts_or_bin_pattern = re.compile(r'^https?://.*\.(ts|bin)', re.MULTILINE)
             second_playlist = os.path.join(tmpdir, 'second_playlist.m3u8')
 
@@ -261,20 +313,49 @@ if __name__ == '__main__':
         
         lines = [line.strip() for line in open(args.file, encoding="utf-8") if line.strip()]
         i = 0
+
+        def is_kinescope_video_url(s):
+            return s.startswith("http") and "kinescope.io" in s and "type=video" in s
+
+        def is_kinescope_audio_url(s):
+            return s.startswith("http") and "kinescope.io" in s and "type=audio" in s
+
+        def is_getcourse_url(s):
+            if not (s and s.startswith("http")):
+                return False
+            if is_kinescope_video_url(s) or is_kinescope_audio_url(s):
+                return False
+            return (
+                "playlist.servicecdn.ru" in s
+                or "/api/playlist/master/" in s
+                or ".m3u8" in s
+            )
+
         while i < len(lines):
-            url = lines[i]
-            
-            # Проверяем Kinescope: kinescope.io с type=video/audio
-            is_kinescope = ('kinescope.io' in url and 'type=video' in url)
-            if is_kinescope and i + 2 < len(lines):
-                next_url = lines[i+1]
-                is_next_kinescope = ('kinescope.io' in next_url and 'type=audio' in next_url)
-                
-                if is_next_kinescope:
-                    video_url = url
+            line = lines[i]
+
+            # TITLE: затем блок GetCourse URL
+            if line.startswith("TITLE:"):
+                current_page_title = line[6:].strip() or "video"
+                i += 1
+                urls = []
+                while i < len(lines) and is_getcourse_url(lines[i]):
+                    urls.append(lines[i])
+                    i += 1
+                for j, u in enumerate(urls):
+                    result_file = f"{current_page_title} - {j + 1}"
+                    print("Скачивание плей-листа: ", u)
+                    print("В файл: ", result_file)
+                    asyncio.run(main(u, result_file, args.no_pre_download))
+                continue
+
+            # Kinescope: video URL, audio URL, name
+            if is_kinescope_video_url(line) and i + 2 < len(lines):
+                next_url = lines[i + 1]
+                if is_kinescope_audio_url(next_url):
+                    video_url = line
                     audio_url = next_url
-                    result_file = lines[i+2] if i + 2 < len(lines) else "output"
-                    
+                    result_file = lines[i + 2] if i + 2 < len(lines) else "output"
                     print(f"Обнаружены Kinescope дорожки")
                     print(f"Видео: {video_url}")
                     print(f"Аудио: {audio_url}")
@@ -282,13 +363,18 @@ if __name__ == '__main__':
                     asyncio.run(download_kinescope_tracks(video_url, audio_url, result_file))
                     i += 3
                     continue
-            
-            # Обычный m3u8 плейлист
-            result_file = lines[i+1] if i + 1 < len(lines) else "output"
-            print("Скачивание плей-листа: ", url)
-            print("В файл: ", result_file)
-            asyncio.run(main(url, result_file, args.no_pre_download))
-            i += 2
+
+            # Обычный m3u8 плейлист (legacy: url, name)
+            if is_getcourse_url(line):
+                url = line
+                result_file = lines[i + 1] if i + 1 < len(lines) else "output"
+                print("Скачивание плей-листа: ", url)
+                print("В файл: ", result_file)
+                asyncio.run(main(url, result_file, args.no_pre_download))
+                i += 2
+                continue
+
+            i += 1
     else:
         while True:
             url = input("Введите ссылку (плейлист или видео Kinescope): ")
