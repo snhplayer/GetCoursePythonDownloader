@@ -1,16 +1,22 @@
 import os
 import re
+import ssl
 import sys
 import tempfile
 from urllib.parse import urljoin
 import aiohttp
 import asyncio
+import certifi
 from tqdm import tqdm
 import subprocess
 import argparse
 import time
 
 MAX_PARALLEL_DOWNLOADS = 4 # Максимальное кол-во параллельных загрузок сегментов
+
+def create_ssl_context():
+    """Use certifi CA bundle — needed on macOS python.org installs with incomplete trust store."""
+    return ssl.create_default_context(cafile=certifi.where())
 
 def merge_video_audio(video_file, audio_file, output_file):
     """Объединение видео и аудио дорожек в один MP4 файл"""
@@ -215,7 +221,8 @@ def convert_to_mp4(result_file, max_retries=3):
     return False
 
 async def main(url, result_file, no_pre_download):
-    async with aiohttp.ClientSession() as session:
+    connector = aiohttp.TCPConnector(ssl=create_ssl_context())
+    async with aiohttp.ClientSession(connector=connector) as session:
         with tempfile.TemporaryDirectory() as tmpdir:
             main_playlist = os.path.join(tmpdir, 'main_playlist.m3u8')
             
