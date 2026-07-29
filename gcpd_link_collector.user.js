@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         gcpd link collector
 // @namespace    https://github.com/snhplayer/GetCoursePythonDownloader
-// @version      0.7.1
+// @version      0.7.4
 // @description  Collect m3u8 links for gcpd.py batch downloads
 // Добавьте свой домен здесь (см. README для подробных инструкций)
 // Add your own domain here to allow Violentmonkey to handle it
 // @match        *://getcourse.ru/*
 // @match        *://*.getcourse.ru/*
 // @match        *://*.muzkursi.ru/*
+// @match        *://*.gceuproxy.com/*
 // @match        *://kinescope.io/*
 // @match        *://*.kinescope.io/*
 // @run-at       document-start
@@ -15,6 +16,7 @@
 // @grant        GM_download
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_setClipboard
 // @grant        GM_setValue
 // @grant        GM_addValueChangeListener
 // ==/UserScript==
@@ -130,11 +132,23 @@
       return;
     }
     updateStatusMenu();
+    GM_registerMenuCommand("Copy gcpd links", copyCollectedLinks);
     GM_registerMenuCommand("Download gcpd links", downloadCollectedLinks);
     GM_registerMenuCommand("Clear collection and rescan", clearCollectedLinks);
     GM_registerMenuCommand("Toggle debug mode", toggleDebugMode);
     GM_registerMenuCommand("Show debug stats", showDebugStats);
     GM_registerMenuCommand("Clear debug stats", clearDebugStats);
+    // Console helpers: copy(window.__gcpd_export()) or console.log(window.__gcpd_data)
+    try {
+      window.__gcpd_data = data;
+      window.__gcpd_export = function () {
+        const content = buildFileContent();
+        console.log(content);
+        return content;
+      };
+    } catch (e) {
+      /* page may block writing to window */
+    }
   }
 
   function isDebugEnabled() {
@@ -857,6 +871,46 @@
     return inplace;
   }
 
+  function copyCollectedLinks() {
+    const content = buildFileContent();
+    if (!content.trim()) {
+      showToast("No links collected yet");
+      return;
+    }
+    try {
+      GM_setClipboard(content, "text");
+      showToast(`Copied ${totalCollected()} links to clipboard`);
+      console.log("[GCPD] Copied links:\n" + content);
+      return;
+    } catch (error) {
+      debugLog("COPY", "GM_setClipboard failed", {
+        error: error && error.message,
+        edgeCase: true,
+      });
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(content).then(
+          function () {
+            showToast(`Copied ${totalCollected()} links to clipboard`);
+          },
+          function () {
+            dumpLinksToConsole(content);
+          }
+        );
+        return;
+      }
+    } catch (error) {
+      /* fall through */
+    }
+    dumpLinksToConsole(content);
+  }
+
+  function dumpLinksToConsole(content) {
+    console.log("[GCPD] Collected links (copy from here):\n" + content);
+    showToast("Links printed to console — copy from DevTools");
+  }
+
   function downloadCollectedLinks() {
     const content = buildFileContent();
     if (!content.trim()) {
@@ -865,17 +919,76 @@
     }
 
     const filename = `gcpd_links_${getTimestamp()}.txt`;
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const revoke = () => URL.revokeObjectURL(url);
+    // With @inject-into page, blob: URLs are not visible to the extension,
+    // so GM_download often fails silently. Prefer a data: URL, then anchor fallback.
+    const dataUrl =
+      "data:text/plain;charset=utf-8," + encodeURIComponent(content);
+    let finished = false;
 
-    GM_download({
-      url,
-      name: filename,
-      onload: revoke,
-      onerror: revoke,
-    });
-    window.setTimeout(revoke, 60000);
+    function finishOk() {
+      if (finished) return;
+      finished = true;
+      showToast(`Downloaded ${filename}`);
+    }
+
+    function finishFallback(reason) {
+      if (finished) return;
+      finished = true;
+      debugLog("DOWNLOAD", "GM_download failed, using anchor fallback", {
+        reason: reason || "unknown",
+        edgeCase: true,
+      });
+      downloadViaAnchor(content, filename);
+    }
+
+    try {
+      GM_download({
+        url: dataUrl,
+        name: filename,
+        onload: finishOk,
+        onerror: function (err) {
+          finishFallback(err && (err.error || err.message || String(err)));
+        },
+        ontimeout: function () {
+          finishFallback("timeout");
+        },
+      });
+      // Some Violentmonkey builds neither call onload nor onerror for data: URLs.
+      window.setTimeout(function () {
+        if (!finished) finishFallback("no GM_download callback");
+      }, 1500);
+    } catch (error) {
+      finishFallback(error && error.message);
+    }
+  }
+
+  function downloadViaAnchor(content, filename) {
+    try {
+      const blob = new Blob([content], {
+        type: "text/plain;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const doc = getPageDocument();
+      const a = doc.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener";
+      a.style.display = "none";
+      (doc.body || doc.documentElement).appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(function () {
+        URL.revokeObjectURL(url);
+      }, 2000);
+      showToast(`Downloaded ${filename}`);
+    } catch (error) {
+      debugLog("DOWNLOAD", "Anchor download failed", {
+        error: error && error.message,
+        edgeCase: true,
+      });
+      showToast("Download failed — check console / try Copy from debug");
+      console.log("[GCPD] Collected links file content:\n" + content);
+    }
   }
 
   function buildFileContent() {

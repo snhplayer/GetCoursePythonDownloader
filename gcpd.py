@@ -1,16 +1,32 @@
 import os
 import re
+import ssl
 import sys
 import tempfile
 from urllib.parse import urljoin
 import aiohttp
 import asyncio
+import certifi
 from tqdm import tqdm
 import subprocess
 import argparse
 import time
 
 MAX_PARALLEL_DOWNLOADS = 4 # Максимальное кол-во параллельных загрузок сегментов
+
+def create_ssl_context():
+    """Use certifi CA bundle — needed on macOS python.org installs with incomplete trust store."""
+    return ssl.create_default_context(cafile=certifi.where())
+
+def mp4_path_for(result_file):
+    return result_file if result_file.endswith(".mp4") else result_file + ".mp4"
+
+def already_downloaded(result_file):
+    path = mp4_path_for(result_file)
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        print(f"Пропуск (уже скачано): {path}")
+        return True
+    return False
 
 def merge_video_audio(video_file, audio_file, output_file):
     """Объединение видео и аудио дорожек в один MP4 файл"""
@@ -215,7 +231,8 @@ def convert_to_mp4(result_file, max_retries=3):
     return False
 
 async def main(url, result_file, no_pre_download):
-    async with aiohttp.ClientSession() as session:
+    connector = aiohttp.TCPConnector(ssl=create_ssl_context())
+    async with aiohttp.ClientSession(connector=connector) as session:
         with tempfile.TemporaryDirectory() as tmpdir:
             main_playlist = os.path.join(tmpdir, 'main_playlist.m3u8')
             
@@ -344,6 +361,8 @@ if __name__ == '__main__':
                     i += 1
                 for j, u in enumerate(urls):
                     result_file = f"{current_page_title} - {j + 1}"
+                    if already_downloaded(result_file):
+                        continue
                     print("Скачивание плей-листа: ", u)
                     print("В файл: ", result_file)
                     asyncio.run(main(u, result_file, args.no_pre_download))
@@ -356,6 +375,9 @@ if __name__ == '__main__':
                     video_url = line
                     audio_url = next_url
                     result_file = lines[i + 2] if i + 2 < len(lines) else "output"
+                    if already_downloaded(result_file):
+                        i += 3
+                        continue
                     print(f"Обнаружены Kinescope дорожки")
                     print(f"Видео: {video_url}")
                     print(f"Аудио: {audio_url}")
@@ -368,6 +390,9 @@ if __name__ == '__main__':
             if is_getcourse_url(line):
                 url = line
                 result_file = lines[i + 1] if i + 1 < len(lines) else "output"
+                if already_downloaded(result_file):
+                    i += 2
+                    continue
                 print("Скачивание плей-листа: ", url)
                 print("В файл: ", result_file)
                 asyncio.run(main(url, result_file, args.no_pre_download))
